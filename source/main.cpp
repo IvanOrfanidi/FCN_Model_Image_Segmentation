@@ -33,13 +33,9 @@ void getLabelsFromFile(std::vector<Label>& labels, const std::string& nameFile)
 
             Label label;
             stream >> label.name;
-            int color;
-            stream >> color;
-            label.color[0] = color;
-            stream >> color;
-            label.color[1] = color;
-            stream >> color;
-            label.color[2] = color;
+            stream >> label.color[0];
+            stream >> label.color[1];
+            stream >> label.color[2];
 
             labels.push_back(label);
         }
@@ -93,11 +89,11 @@ int main()
             return EXIT_FAILURE;
         }
 
-        const double start = cv::getTickCount();
+        const auto start = cv::getTickCount();
         const cv::Mat blob = cv::dnn::blobFromImage(source);
         net.setInput(blob, "data");
         const cv::Mat score = net.forward("score");
-        std::string runTime = "run time: " + std::to_string((cv::getTickCount() - start) / cv::getTickFrequency());
+        std::string runTime = "run time: " + std::to_string(static_cast<double>(cv::getTickCount() - start) / cv::getTickFrequency());
         runTime.erase(runTime.end() - 3, runTime.end());
 
         const int& rows = score.size[2]; // Image height.
@@ -147,6 +143,11 @@ int main()
             cv::putText(destination, name, cv::Point(10, 20), cv::FONT_HERSHEY_COMPLEX_SMALL, 1.0, cv::Scalar(0, 0, 255), 1, 5);
         }
         cv::putText(destination, runTime, cv::Point(10, destination.size().height - 10), cv::FONT_HERSHEY_PLAIN, 1.0, cv::Scalar(0, 255, 0), 1, 5);
+#ifdef NDEBUG
+        cv::putText(destination, "in release", cv::Point(150, destination.size().height - 10), cv::FONT_HERSHEY_PLAIN, 1.0, cv::Scalar(0, 255, 0), 1, 5);
+#else
+        cv::putText(destination, "in debug", cv::Point(150, destination.size().height - 10), cv::FONT_HERSHEY_PLAIN, 1.0, cv::Scalar(0, 255, 0), 1, 5);
+#endif
         const std::string resolution = std::to_string(destination.size().width) + "x" + std::to_string(destination.size().height);
         cv::putText(destination, resolution, cv::Point(destination.size().width - 80, destination.size().height - 10), cv::FONT_HERSHEY_PLAIN, 1.0, cv::Scalar(0, 255, 0), 1, 5);
 

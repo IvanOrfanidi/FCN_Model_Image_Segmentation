@@ -11,18 +11,25 @@ set(CMAKE_CXX_STANDARD 17)
 if((CMAKE_CXX_COMPILER_ID MATCHES "GNU") OR (CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
     add_compile_options(
         -Werror
+        -pedantic-errors
+        
         -Wall
         -Wextra
-
         -Wpedantic
+
         -Wcast-align
         -Wcast-qual
+        -Wconversion
+        -Wextra-semi
         -Wenum-compare
         -Wfloat-equal
         -Wnon-virtual-dtor
         -Woverloaded-virtual
         -Wredundant-decls
+        -Wold-style-cast
         -Wsign-promo
+        -Wzero-as-null-pointer-constant
+        -Wsign-conversion
     )
 endif()
 
