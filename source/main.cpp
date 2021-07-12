@@ -71,6 +71,12 @@ int main()
     // Define the codec and create VideoWriter object.The output is stored in 'outcpp.avi' file.
     cv::VideoWriter video(OUTPUT_NAME_FILE.data(), cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), fps, cv::Size(WIDTH, HEIGHT));
 
+    cv::cuda::DeviceInfo deviceInfo;
+    bool isCudaEnable = false;
+    if (cv::cuda::getCudaEnabledDeviceCount() == 1 && deviceInfo.isCompatible() == 1) {
+        isCudaEnable = true;
+    }
+
     cv::Mat source;
     static constexpr int ESCAPE_KEY = 27;
     while (cv::waitKey(DELAY_MS) != ESCAPE_KEY) {
@@ -87,6 +93,11 @@ int main()
         if (net.empty()) {
             std::cerr << "Could not load Caffe_net!" << std::endl;
             return EXIT_FAILURE;
+        }
+
+        if (isCudaEnable) {
+            net.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
+            net.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA_FP16);
         }
 
         const auto start = cv::getTickCount();
