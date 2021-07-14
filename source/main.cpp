@@ -3,18 +3,18 @@
 #include <iostream>
 #include <limits>
 
+#include <boost/program_options.hpp>
+
 #include <opencv2/dnn.hpp>
 #include <opencv2/opencv.hpp>
 
-constexpr std::string_view NAME_LABEL_FILE = "pascal-classes.txt"; // Tag file.
-constexpr std::string_view NAME_DEPLOY_FILE = "fcn8s-heavy-pascal.prototxt"; // Description file.
-constexpr std::string_view NAME_MODEL_FILE = "fcn8s-heavy-pascal.caffemodel"; // Training files.
-
-constexpr std::string_view OUTPUT_NAME_FILE = "output.avi";
+constexpr std::string_view NAME_LABEL_FILE = "pascal-classes.txt"; // Tag file
+constexpr std::string_view NAME_DEPLOY_FILE = "fcn8s-heavy-pascal.prototxt"; // Description file
+constexpr std::string_view NAME_MODEL_FILE = "fcn8s-heavy-pascal.caffemodel"; // Training files
 
 constexpr int WIDTH = 500;
 constexpr int HEIGHT = 500;
-constexpr int DELAY_MS = 100;
+constexpr int DELAY_MS = 10;
 
 struct Label {
     std::string name;
@@ -36,30 +36,56 @@ void getLabelsFromFile(std::vector<Label>& labels, const std::string& nameFile)
             stream >> label.color[0];
             stream >> label.color[1];
             stream >> label.color[2];
-
-            labels.push_back(label);
+            labels.push_back(std::move(label));
         }
-
         file.close();
     }
 }
 
-int main()
+int main(int argc, char* argv[])
 {
-    // Open the default video camera.
-    cv::VideoCapture capture(cv::VideoCaptureAPIs::CAP_ANY);
+    std::string inputFile;
+    std::string outputFile;
+    bool isCuda;
+    boost::program_options::options_description desc("Options");
+    desc.add_options()
+        // All options:
+        ("in,i", boost::program_options::value<std::string>(&inputFile)->default_value(""), "Path to input file.\n") //
+        ("out,o", boost::program_options::value<std::string>(&outputFile)->default_value("output.avi"), "Path to output file.\n") //
+        ("cuda,c", boost::program_options::value<bool>(&isCuda)->default_value(true), "Set CUDA Enable.\n") //
+        ("help,h", "Produce help message."); // Help
+    boost::program_options::variables_map options;
+    try {
+        boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
+        boost::program_options::notify(options);
+    } catch (const std::exception& exception) {
+        std::cerr << "Error: " << exception.what() << std::endl;
+        return EXIT_FAILURE;
+    }
+    if (options.count("help")) {
+        std::cout << desc << std::endl;
+        return EXIT_SUCCESS;
+    }
+
+    cv::VideoCapture capture;
+    if (inputFile.length() == 0) {
+        // Open default video camera
+        capture.open(cv::VideoCaptureAPIs::CAP_ANY);
+    } else {
+        capture.open(inputFile);
+    }
     if (capture.isOpened() == false) {
-        std::cerr << "Cannot open the video camera!" << std::endl;
+        std::cerr << "Cannot open video!" << std::endl;
         return EXIT_FAILURE;
     }
 
     std::string path = std::filesystem::current_path().string() + '/';
     std::replace(path.begin(), path.end(), '\\', '/');
 
-    const auto width = capture.get(cv::CAP_PROP_FRAME_WIDTH); // Get the width of frames of the video.
-    const auto height = capture.get(cv::CAP_PROP_FRAME_HEIGHT); // Get the height of frames of the video.
+    const auto width = capture.get(cv::CAP_PROP_FRAME_WIDTH); // Get width of frames of video
+    const auto height = capture.get(cv::CAP_PROP_FRAME_HEIGHT); // Get height of frames of video
     const auto fps = capture.get(cv::CAP_PROP_FPS);
-    std::cout << "Resolution of the video: " << width << " x " << height << ".\nFrames per seconds: " << fps << "." << std::endl;
+    std::cout << "Resolution of video: " << width << " x " << height << ".\nFrames per seconds: " << fps << "." << std::endl;
 
     std::vector<Label> labels;
     getLabelsFromFile(labels, path + NAME_LABEL_FILE.data());
@@ -68,48 +94,53 @@ int main()
         return EXIT_FAILURE;
     }
 
-    // Define the codec and create VideoWriter object.The output is stored in 'outcpp.avi' file.
-    cv::VideoWriter video(OUTPUT_NAME_FILE.data(), cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), fps, cv::Size(WIDTH, HEIGHT));
+    // Define codec and create VideoWriter object.output is stored in 'outcpp.avi' file
+    cv::VideoWriter video(outputFile, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), fps, cv::Size(WIDTH, HEIGHT));
 
-    cv::cuda::DeviceInfo deviceInfo;
     bool isCudaEnable = false;
-    if (cv::cuda::getCudaEnabledDeviceCount() == 1 && deviceInfo.isCompatible() == 1) {
-        isCudaEnable = true;
+    if (cv::cuda::getCudaEnabledDeviceCount() != 0) {
+        cv::cuda::DeviceInfo deviceInfo;
+        if (deviceInfo.isCompatible() != 0 && isCuda) {
+            cv::cuda::printShortCudaDeviceInfo(cv::cuda::getDevice());
+            isCudaEnable = true;
+        }
     }
 
-    cv::Mat source;
     static constexpr int ESCAPE_KEY = 27;
     while (cv::waitKey(DELAY_MS) != ESCAPE_KEY) {
         // Read a new frame from video.
-        if (capture.read(source) == false) { // Breaking the while loop if the frames cannot be captured.
+        cv::Mat source;
+        if (capture.read(source) == false) { // Breaking while loop if frames cannot be captured
             std::cerr << "Video camera is disconnected!" << std::endl;
             return EXIT_FAILURE;
         }
         resize(source, source, cv::Size(WIDTH, HEIGHT), 0, 0);
 
-        cv::dnn::Net net;
-        // Read binary file and description file.
-        net = cv::dnn::readNetFromCaffe(path + NAME_DEPLOY_FILE.data(), path + NAME_MODEL_FILE.data());
-        if (net.empty()) {
+        cv::dnn::Net neuralNetwork;
+        // Read binary file and description file
+        neuralNetwork = cv::dnn::readNetFromCaffe(path + NAME_DEPLOY_FILE.data(), path + NAME_MODEL_FILE.data());
+        if (neuralNetwork.empty()) {
             std::cerr << "Could not load Caffe_net!" << std::endl;
             return EXIT_FAILURE;
         }
 
+        // Set CUDA as preferable backend and target
         if (isCudaEnable) {
-            net.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
-            net.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA_FP16);
+            neuralNetwork.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
+            neuralNetwork.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA);
         }
 
-        const auto start = cv::getTickCount();
+        const auto startTime = cv::getTickCount();
         const cv::Mat blob = cv::dnn::blobFromImage(source);
-        net.setInput(blob, "data");
-        const cv::Mat score = net.forward("score");
-        std::string runTime = "run time: " + std::to_string(static_cast<double>(cv::getTickCount() - start) / cv::getTickFrequency());
+        neuralNetwork.setInput(blob, "data");
+        cv::Mat score = neuralNetwork.forward("score");
+        std::string runTime = "run time: " + std::to_string(static_cast<double>(cv::getTickCount() - startTime) / cv::getTickFrequency());
         runTime.erase(runTime.end() - 3, runTime.end());
+        runTime += "s";
 
-        const int& rows = score.size[2]; // Image height.
-        const int& cols = score.size[3]; // The width of the image.
-        const int& chns = score.size[1]; // Number of image channels.
+        const int rows = score.size[2]; // Image height
+        const int cols = score.size[3]; // Width of image
+        const int chns = score.size[1]; // Number of image channels
         cv::Mat maxCl(rows, cols, CV_8UC1);
         cv::Mat maxVal(rows, cols, CV_32FC1);
 
@@ -127,7 +158,7 @@ int main()
             }
         }
 
-        // Look up colors.
+        // Look up colors
         std::set<size_t> indexes;
         cv::Mat result = cv::Mat::zeros(rows, cols, CV_8UC3);
         for (int row = 0; row < rows; row++) {
@@ -141,30 +172,37 @@ int main()
         }
 
         cv::Mat destination;
-        cv::addWeighted(source, 0.3, result, 0.7, 0, destination); // Image merge.
+        cv::addWeighted(source, 0.3, result, 1.8, 0, destination); // Image merge
 
         std::string name;
         for (const auto& index : indexes) {
             if (index != 0 && index < labels.size()) {
-                name += labels[index].name + " & ";
+                if (!labels[index].name.empty()) {
+                    name += labels[index].name + " & ";
+                }
             }
         }
         if (!name.empty()) {
             name.erase(name.end() - 3, name.end());
-            cv::putText(destination, name, cv::Point(10, 20), cv::FONT_HERSHEY_COMPLEX_SMALL, 1.0, cv::Scalar(0, 0, 255), 1, 5);
+            cv::putText(destination, name, cv::Point(10, 20), cv::FONT_HERSHEY_COMPLEX_SMALL, 1.1, cv::Scalar(0, 0, 255), 1, 5);
         }
-        cv::putText(destination, runTime, cv::Point(10, destination.size().height - 10), cv::FONT_HERSHEY_PLAIN, 1.0, cv::Scalar(0, 255, 0), 1, 5);
+        cv::putText(destination, runTime, cv::Point(10, destination.size().height - 10), cv::FONT_HERSHEY_PLAIN, 1.1, cv::Scalar(0, 255, 0), 1, 5);
 #ifdef NDEBUG
-        cv::putText(destination, "in release", cv::Point(150, destination.size().height - 10), cv::FONT_HERSHEY_PLAIN, 1.0, cv::Scalar(0, 255, 0), 1, 5);
+        cv::putText(destination, "in release", cv::Point(180, destination.size().height - 10), cv::FONT_HERSHEY_PLAIN, 1.1, cv::Scalar(0, 255, 0), 1, 5);
 #else
-        cv::putText(destination, "in debug", cv::Point(150, destination.size().height - 10), cv::FONT_HERSHEY_PLAIN, 1.0, cv::Scalar(0, 255, 0), 1, 5);
+        cv::putText(destination, "in debug", cv::Point(180, destination.size().height - 10), cv::FONT_HERSHEY_PLAIN, 1.1, cv::Scalar(0, 255, 0), 1, 5);
 #endif
+        if (isCudaEnable) {
+            cv::putText(destination, "using GPUs", cv::Point(300, destination.size().height - 10), cv::FONT_HERSHEY_PLAIN, 1.1, cv::Scalar(0, 255, 0), 1, 5);
+        } else {
+            cv::putText(destination, "using CPUs", cv::Point(300, destination.size().height - 10), cv::FONT_HERSHEY_PLAIN, 1.1, cv::Scalar(0, 255, 0), 1, 5);
+        }
         const std::string resolution = std::to_string(destination.size().width) + "x" + std::to_string(destination.size().height);
-        cv::putText(destination, resolution, cv::Point(destination.size().width - 80, destination.size().height - 10), cv::FONT_HERSHEY_PLAIN, 1.0, cv::Scalar(0, 255, 0), 1, 5);
+        cv::putText(destination, resolution, cv::Point(destination.size().width - 80, destination.size().height - 10), cv::FONT_HERSHEY_PLAIN, 1.1, cv::Scalar(0, 255, 0), 1, 5);
 
         cv::imshow("FCN-demo", destination);
 
-        // Write the frame into the file.
+        // Write frame into file
         video.write(destination);
     }
 

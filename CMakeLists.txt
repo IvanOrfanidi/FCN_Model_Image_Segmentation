@@ -11,25 +11,9 @@ set(CMAKE_CXX_STANDARD 17)
 if((CMAKE_CXX_COMPILER_ID MATCHES "GNU") OR (CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
     add_compile_options(
         -Werror
-        -pedantic-errors
-        
         -Wall
         -Wextra
         -Wpedantic
-
-        -Wcast-align
-        -Wcast-qual
-        -Wconversion
-        -Wextra-semi
-        -Wenum-compare
-        -Wfloat-equal
-        -Wnon-virtual-dtor
-        -Woverloaded-virtual
-        -Wredundant-decls
-        -Wold-style-cast
-        -Wsign-promo
-        -Wzero-as-null-pointer-constant
-        -Wsign-conversion
     )
 endif()
 
@@ -43,10 +27,16 @@ find_package(OpenCV REQUIRED)
 # Include directories
 include_directories(${OpenCV_INCLUDE_DIRS})
 
-# Set build type
-if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Release)
-endif(NOT CMAKE_BUILD_TYPE)
+# Boost components
+set(BOOST_COMPONENTS
+    program_options
+    system
+    filesystem
+    date_time
+    chrono
+    serialization
+)
+find_package(Boost COMPONENTS ${BOOST_COMPONENTS} REQUIRED)
 
 # Compiling target
 add_executable(${PROJECT_NAME} ${SOURCES})
@@ -54,4 +44,5 @@ add_executable(${PROJECT_NAME} ${SOURCES})
 target_link_libraries(${PROJECT_NAME}
     stdc++fs
     ${OpenCV_LIBS}
+    ${Boost_LIBRARIES}
 )
