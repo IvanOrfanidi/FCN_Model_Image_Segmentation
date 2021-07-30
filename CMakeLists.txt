@@ -31,10 +31,6 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 set(BOOST_COMPONENTS
     program_options
     system
-    filesystem
-    date_time
-    chrono
-    serialization
 )
 find_package(Boost COMPONENTS ${BOOST_COMPONENTS} REQUIRED)
 
